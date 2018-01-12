@@ -4,11 +4,34 @@ from __future__ import print_function
 
 import argparse
 import sys
-import tempfile
+import os
 
 from tensorflow.examples.tutorials.mnist import input_data
 
 import tensorflow as tf
+
+"""From Deep MNIST for experts tutorial:
+https://www.tensorflow.org/get_started/mnist/pros
+https://github.com/tensorflow/tensorflow/blob/r1.4/tensorflow/examples/tutorials/mnist/mnist_deep.py
+
+"""
+
+"""Helper functions for saving model checkpoints.
+From https://jhui.github.io/2017/03/08/TensorFlow-variable-sharing/
+"""
+def load_model(session, saver, checkpoint_dir):
+    session.run(tf.global_variables_initializer())
+    ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+    if ckpt and ckpt.model_checkpoint_path:
+        ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+        saver.restore(session, os.path.join(checkpoint_dir, ckpt_name))
+        return True
+    else:
+        return False
+
+def save_model(session, saver, checkpoint_dir, step):
+    dir = os.path.join(checkpoint_dir, "model")
+    saver.save(session, dir, global_step=step)
 
 FLAGS = None
 
@@ -20,7 +43,7 @@ def deepnn(x):
         is the number of pixels in a standard MNIST image
 
     Returns:
-        A tuple (y, keep_prob). y is a tensor of shope (N_examples, 10), with
+        A tuple (y, keep_prob). y is a tensor of shape (N_examples, 10), with
         values equal to the logits of classifying the digits into one of 10
         classes (the digits 0-9). keep_prob is a scalar placeholder for the
         probability of dropout.
@@ -121,31 +144,38 @@ def main(_):
         )
     cross_entropy = tf.reduce_mean(cross_entropy)
 
+    global_step = tf.Variable(0, name = "global_step", trainable = False, \
+                                                            dtype = tf.int32)
+
     with tf.name_scope('adam_optimizer'):
-        train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
+        train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy, \
+                                                    global_step = global_step)
 
     with tf.name_scope('accuracy'):
         correct_prediction = tf.equal(tf.argmax(y_, 1), tf.argmax(y_conv, 1))
         correct_prediction = tf.cast(correct_prediction, tf.float32)
     accuracy = tf.reduce_mean(correct_prediction)
 
-    graph_location = tempfile.mkdtemp()
-    print("Saving graph to %s" % graph_location)
-    train_writer = tf.summary.FileWriter(graph_location)
-    train_writer.add_graph(tf.get_default_graph())
-
     # using with block means tf.Session() automatically destroyed when exit
     with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        for i in range(20000):
+
+        saver = tf.train.Saver()
+
+        # saves and restores previous model, if there is one
+        load_model(sess, saver, "./checkpoint")
+
+        while sess.run(global_step) < 20000:
             batch = mnist.train.next_batch(50)
-            if i % 100 == 0:
+            if sess.run(global_step) % 100 == 0:
                 train_accuracy = accuracy.eval(feed_dict =
                     {x: batch[0],
                     y_: batch[1],
                     keep_prob: 1}
                 )
-                print("step %d, train_accuracy %g" % (i, train_accuracy))
+                print("step %d, train_accuracy %g" % (sess.run(global_step), \
+                                                                train_accuracy))
+                if sess.run(global_step) % 1000 == 0:
+                    save_model(sess, saver, "./checkpoint", global_step)
             train_step.run(feed_dict =
                 {x: batch[0],
                 y_: batch[1],
@@ -156,6 +186,7 @@ def main(_):
             y_: mnist.test.labels,
             keep_prob: 1}
         ))
+        # do adversarial examples
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
