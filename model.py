@@ -159,13 +159,16 @@ def main(_):
     # using with block means tf.Session() automatically destroyed when exit
     with tf.Session() as sess:
 
+        # create saver to restore and save variables into checkpoints
         saver = tf.train.Saver()
 
-        # saves and restores previous model, if there is one
+        # restores previous model, if there is one saved in a checkpoint
         load_model(sess, saver, "./checkpoint")
 
-        while sess.run(global_step) < 20000:
+        while sess.run(global_step) <= 20000:
+
             batch = mnist.train.next_batch(50)
+
             if sess.run(global_step) % 100 == 0:
                 train_accuracy = accuracy.eval(feed_dict =
                     {x: batch[0],
@@ -175,12 +178,15 @@ def main(_):
                 print("step %d, train_accuracy %g" % (sess.run(global_step), \
                                                                 train_accuracy))
                 if sess.run(global_step) % 1000 == 0:
+                    # save model in checkpoint
                     save_model(sess, saver, "./checkpoint", global_step)
+
             train_step.run(feed_dict =
                 {x: batch[0],
                 y_: batch[1],
                 keep_prob: 0.5}
             )
+
         print('test accuracy %g' % accuracy.eval(feed_dict =
             {x: mnist.test.images,
             y_: mnist.test.labels,
