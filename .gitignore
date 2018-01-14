@@ -1,2 +1,6 @@
 # Directories #
 /checkpoint
+/images
+
+# OS Generated Files #
+.DS_Store
