@@ -162,6 +162,9 @@ def main(_):
         is_two = tf.equal(tf.argmax(y_, 1), 2)
     correct_twos = tf.logical_and(correct_prediction, is_two)
 
+    with tf.name_scope('adversarial_gradients'):
+        adversarial_gradients = tf.gradients(xs = x, ys = cross_entropy)
+
     # using with block means tf.Session() automatically destroyed when exit
     with tf.Session() as sess:
 
@@ -199,45 +202,22 @@ def main(_):
             keep_prob: 1}
         ))
 
-        # get examples of correctly classified 2:
-
-        # correct_twos_eval[i] is True iff the model correctly predicts the
-        # ith image in MNIST test set as a '2'
-        correct_twos_eval = correct_twos.eval(feed_dict =
+        correct_twos_mask = correct_twos.eval(feed_dict =
             {x: mnist.test.images,
             y_: mnist.test.labels,
             keep_prob: 1}
         )
-        # collect the indices
-        indices = []
-        for i in range(len(correct_twos_eval)):
-            if correct_twos_eval[i]:
-                indices.append(i)
 
-        # pseudo random shuffle of indices (to allow for replicability)
-        # remove the seed argument to have different shufflings
-        indices = tf.random_shuffle(indices, seed = 0)
+        adversarial_x = tf.boolean_mask(mnist.test.images,
+                                                    correct_twos_mask).eval()
+        adversarial_y = tf.one_hot([6 for _ in range(len(adversarial_x))],
+                                                depth = 10, axis = -1).eval()
 
-        # get the first ten
-        first_ten = indices[:10]
-
-        # sanity-check: make sure first_ten is as expected, and that we've
-        # actually saved images of '2'
-
-        # with seed = 0 argument in random_shuffle, should get
-        # [6041 2133 7271 3933 4418  738 7977 3274 9309 4905]
-        # note: it's important you only do sess.run(first_ten) once, otherwise
-        # you'll get a different array
-        eval_first_ten = sess.run(first_ten)
-        print(str(eval_first_ten))
-
-        # save images to disk to sanity-check that what we've done so far is
-        # correct, i.e. we actually have 10 images of '2'
-        for ind in eval_first_ten:
-            imsave('images/' + str(ind) + '.jpg', \
-                        sess.run(tf.reshape(mnist.test.images[ind], [28, 28])))
-
-        # comment out sanity-check before doing adversarial examples
+        print(sess.run(adversarial_gradients, feed_dict =
+            {x: adversarial_x,
+            y_: adversarial_y,
+            keep_prob: 1}
+        ))
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
