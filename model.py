@@ -202,22 +202,48 @@ def main(_):
             keep_prob: 1}
         ))
 
-        correct_twos_mask = correct_twos.eval(feed_dict =
+        EPSILON = tf.constant(.25)
+
+        # adversarial examples using fast sign gradient method
+        adversarial_ex = x + EPSILON * tf.sign(adversarial_gradients)
+
+        # True iff example predicted correctly
+        correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(y_, 1))
+        # True iff example predicted with confidence >=20%
+        confidence = tf.greater_equal(tf.reduce_max(y_conv, 1), [20 for _ in range(10000)])
+
+        # predict incorrectly with >=20% confidence
+        incorrect_confidence = tf.logical_and(tf.logical_not(correct_prediction), confidence)
+
+        # original images predicted correctly
+        original_prediction = correct_prediction.eval(feed_dict =
             {x: mnist.test.images,
             y_: mnist.test.labels,
-            keep_prob: 1}
-        )
+            keep_prob: 1
+        })
 
-        adversarial_x = tf.boolean_mask(mnist.test.images,
-                                                    correct_twos_mask).eval()
-        adversarial_y = tf.one_hot([6 for _ in range(len(adversarial_x))],
-                                                depth = 10, axis = -1).eval()
+        # adversarially pertubed images predicted incorrectly w/ >=20% confidence
+        adv_prediction = incorrect_confidence.eval(feed_dict =
+            {x: tf.reshape(adversarial_ex.eval(feed_dict =
+                {x: mnist.test.images,
+                y_: mnist.test.labels,
+                keep_prob: 1
+            }), [10000, 784]).eval(),
+            y_: mnist.test.labels,
+            keep_prob: 1
+        })
 
-        print(sess.run(adversarial_gradients, feed_dict =
-            {x: adversarial_x,
-            y_: adversarial_y,
-            keep_prob: 1}
-        ))
+        # original predicted correctly, adversarial predicted incorrectly w/ >=20% confidence
+        successful_adv = tf.logical_and(original_prediction, adv_prediction)
+
+        # count the number of 'successful' adversarial examples
+        count = 0
+        successful_adv = successful_adv.eval()
+        for i in range(len(successful_adv)):
+            if successful_adv[i]:
+                count += 1
+        print (count)
+        # only 1256, on higher confidences (>=40%) get 0
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
