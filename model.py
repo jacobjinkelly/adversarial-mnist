@@ -162,8 +162,16 @@ def main(_):
         is_two = tf.equal(tf.argmax(y_, 1), 2)
     correct_twos = tf.logical_and(correct_prediction, is_two)
 
-    with tf.name_scope('adversarial_gradients'):
-        adversarial_gradients = tf.gradients(xs = x, ys = cross_entropy)
+    EPSILON = tf.constant(.25)
+    ITERS = 100
+
+    # save to disk, load in
+    adversarial_ex = tf.Variable(mnist.test.images)
+
+    adversarial_gradients = tf.gradients(xs = x, ys = cross_entropy)
+
+    adversarial_ex_op = tf.assign(adversarial_ex, tf.squeeze(adversarial_ex +
+                                 (EPSILON/tf.constant(float(ITERS))) * tf.sign(adversarial_gradients)))
 
     # using with block means tf.Session() automatically destroyed when exit
     with tf.Session() as sess:
@@ -174,7 +182,7 @@ def main(_):
         # restores previous model, if there is one saved in a checkpoint
         load_model(sess, saver, "./checkpoint")
 
-        while sess.run(global_step) <= 20000:
+        while sess.run(global_step) <= 1000:
 
             batch = mnist.train.next_batch(50)
 
@@ -202,17 +210,18 @@ def main(_):
             keep_prob: 1}
         ))
 
-        EPSILON = tf.constant(.25)
-
-        # adversarial examples using fast sign gradient method
-        adversarial_ex = x + EPSILON * tf.sign(adversarial_gradients)
+        for i in range(ITERS):
+            print(i)
+            sess.run(adversarial_ex_op, feed_dict = {x: sess.run(adversarial_ex),
+                                                    y_: mnist.test.labels,
+                                                    keep_prob: 1})
 
         # True iff example predicted correctly
         correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(y_, 1))
-        # True iff example predicted with confidence >=20%
-        confidence = tf.greater_equal(tf.reduce_max(y_conv, 1), [20 for _ in range(10000)])
+        # True iff example predicted with confidence >= 20%
+        confidence = tf.greater_equal(tf.reduce_max(y_conv, 1), [50 for _ in range(len(mnist.test.labels))])
 
-        # predict incorrectly with >=20% confidence
+        # predict incorrectly with >= 20% confidence
         incorrect_confidence = tf.logical_and(tf.logical_not(correct_prediction), confidence)
 
         # original images predicted correctly
@@ -224,26 +233,28 @@ def main(_):
 
         # adversarially pertubed images predicted incorrectly w/ >=20% confidence
         adv_prediction = incorrect_confidence.eval(feed_dict =
-            {x: tf.reshape(adversarial_ex.eval(feed_dict =
-                {x: mnist.test.images,
-                y_: mnist.test.labels,
-                keep_prob: 1
-            }), [10000, 784]).eval(),
+            {x: sess.run(adversarial_ex),
             y_: mnist.test.labels,
             keep_prob: 1
         })
 
-        # original predicted correctly, adversarial predicted incorrectly w/ >=20% confidence
+        # original predicted correctly, adversarial predicted incorrectly w/ >= 20% confidence
         successful_adv = tf.logical_and(original_prediction, adv_prediction)
 
+        original_prediction_count = tf.count_nonzero(original_prediction)
+        adv_prediction_count = tf.count_nonzero(adv_prediction)
+        successful_adv_count = tf.count_nonzero(successful_adv)
+
+        print(sess.run([original_prediction_count, adv_prediction_count, successful_adv_count]))
+
         # count the number of 'successful' adversarial examples
-        count = 0
-        successful_adv = successful_adv.eval()
-        for i in range(len(successful_adv)):
-            if successful_adv[i]:
-                count += 1
-        print (count)
-        # only 1256, on higher confidences (>=40%) get 0
+        # count = 0
+        # successful_adv = successful_adv.eval()
+        # for i in range(len(successful_adv)):
+        #     if successful_adv[i]:
+        #         count += 1
+        # print (count)
+        # only 1256, on higher confidences (>= 40%) get 0
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
